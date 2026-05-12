@@ -2,9 +2,13 @@
 # install.sh — Dotfiles bootstrap (works in WSL and DevContainers)
 #
 # VS Code's devcontainer "dotfiles" feature clones your repo to
-# ~/.dotfiles and runs this script. It's also safe to run manually.
+# ~/.dotfiles and runs this script. Safe to run manually too.
+#
+# NOTE: We intentionally do NOT use "set -e" (errexit) because the
+# oh-my-posh curl install can fail in restricted networks (e.g.
+# during devcontainer build) and we don't want that to prevent
+# symlinks and git config from completing.
 
-set -o errexit
 set -o nounset
 set -o pipefail
 
@@ -18,16 +22,14 @@ link_file() {
     local dst="$2"
 
     if [ -L "${dst}" ]; then
-        # Already a symlink — remove and re-create
         rm -f "${dst}"
     elif [ -f "${dst}" ]; then
-        # Regular file — back it up
         echo "-- Backing up ${dst} -> ${dst}.backup"
         mv "${dst}" "${dst}.backup"
     fi
 
     ln -s "${src}" "${dst}"
-    echo "-- Linked ${src} -> ${dst}"
+    echo "-- Linked ${dst} -> ${src}"
 }
 
 # ── Symlink dotfiles ───────────────────────────────────────────────────────
@@ -51,11 +53,17 @@ fi
 git config --global init.defaultBranch main
 
 # ── Install oh-my-posh (if not already present) ───────────────────────────
+# Wrapped in a subshell so a network failure doesn't kill the script.
+# In devcontainers, network may not be ready during early lifecycle hooks.
 if ! command -v oh-my-posh &>/dev/null; then
-    echo "-- Installing oh-my-posh..."
-    curl -s https://ohmyposh.dev/install.sh | bash -s -- -d "${HOME}/.local/bin"
-    export PATH="${HOME}/.local/bin:${PATH}"
-    echo "-- oh-my-posh installed to ~/.local/bin"
+    echo "-- oh-my-posh not found, attempting install..."
+    if (curl -s https://ohmyposh.dev/install.sh | bash -s -- -d "${HOME}/.local/bin") 2>&1; then
+        echo "-- oh-my-posh installed successfully to ~/.local/bin"
+    else
+        echo "!! oh-my-posh install FAILED (network issue?)"
+        echo "!! To install manually, open a terminal and run:"
+        echo "!!   curl -s https://ohmyposh.dev/install.sh | bash -s -- -d ~/.local/bin"
+    fi
 else
     echo "-- oh-my-posh already installed: $(which oh-my-posh)"
 fi
